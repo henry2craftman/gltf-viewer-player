@@ -739,6 +739,45 @@ class GLTFViewer {
             sunIntensityValue.textContent = value.toFixed(1);
         });
 
+        // Sun orbit rotation controls
+        const orbitPitch = document.getElementById('orbit-pitch');
+        const orbitPitchValue = document.getElementById('orbit-pitch-value');
+        orbitPitch.addEventListener('input', (e) => {
+            const degrees = parseFloat(e.target.value);
+            const radians = THREE.MathUtils.degToRad(degrees);
+            this.timeOfDay.setOrbitPitch(radians);
+            orbitPitchValue.textContent = degrees.toFixed(0) + '°';
+        });
+
+        const orbitYaw = document.getElementById('orbit-yaw');
+        const orbitYawValue = document.getElementById('orbit-yaw-value');
+        orbitYaw.addEventListener('input', (e) => {
+            const degrees = parseFloat(e.target.value);
+            const radians = THREE.MathUtils.degToRad(degrees);
+            this.timeOfDay.setOrbitYaw(radians);
+            orbitYawValue.textContent = degrees.toFixed(0) + '°';
+        });
+
+        const orbitRoll = document.getElementById('orbit-roll');
+        const orbitRollValue = document.getElementById('orbit-roll-value');
+        orbitRoll.addEventListener('input', (e) => {
+            const degrees = parseFloat(e.target.value);
+            const radians = THREE.MathUtils.degToRad(degrees);
+            this.timeOfDay.setOrbitRoll(radians);
+            orbitRollValue.textContent = degrees.toFixed(0) + '°';
+        });
+
+        const resetOrbit = document.getElementById('reset-orbit');
+        resetOrbit.addEventListener('click', () => {
+            this.timeOfDay.setOrbitRotation(0, 0, 0);
+            orbitPitch.value = 0;
+            orbitPitchValue.textContent = '0°';
+            orbitYaw.value = 0;
+            orbitYawValue.textContent = '0°';
+            orbitRoll.value = 0;
+            orbitRollValue.textContent = '0°';
+        });
+
         // Graphics settings
         const enableShadows = document.getElementById('enable-shadows');
         enableShadows.addEventListener('change', (e) => {
@@ -997,6 +1036,9 @@ class GLTFViewer {
             timeOfDay: this.timeOfDay.timeOfDay,
             timeSpeed: this.timeOfDay.timeSpeed,
             sunIntensity: this.timeOfDay.sunIntensity,
+            orbitPitch: this.timeOfDay.orbitRotation.x,
+            orbitYaw: this.timeOfDay.orbitRotation.y,
+            orbitRoll: this.timeOfDay.orbitRotation.z,
 
             // Graphics
             shadowsEnabled: this.renderer.shadowMap.enabled,
@@ -1165,6 +1207,24 @@ class GLTFViewer {
             this.timeOfDay.setSunIntensity(settings.sunIntensity);
             document.getElementById('sun-intensity').value = settings.sunIntensity;
             document.getElementById('sun-intensity-value').textContent = settings.sunIntensity.toFixed(1);
+        }
+        if (settings.orbitPitch !== undefined) {
+            this.timeOfDay.setOrbitPitch(settings.orbitPitch);
+            const degrees = THREE.MathUtils.radToDeg(settings.orbitPitch);
+            document.getElementById('orbit-pitch').value = degrees;
+            document.getElementById('orbit-pitch-value').textContent = degrees.toFixed(0) + '°';
+        }
+        if (settings.orbitYaw !== undefined) {
+            this.timeOfDay.setOrbitYaw(settings.orbitYaw);
+            const degrees = THREE.MathUtils.radToDeg(settings.orbitYaw);
+            document.getElementById('orbit-yaw').value = degrees;
+            document.getElementById('orbit-yaw-value').textContent = degrees.toFixed(0) + '°';
+        }
+        if (settings.orbitRoll !== undefined) {
+            this.timeOfDay.setOrbitRoll(settings.orbitRoll);
+            const degrees = THREE.MathUtils.radToDeg(settings.orbitRoll);
+            document.getElementById('orbit-roll').value = degrees;
+            document.getElementById('orbit-roll-value').textContent = degrees.toFixed(0) + '°';
         }
 
         // Graphics

@@ -299,6 +299,35 @@
                 <input type="range" id="sun-intensity" min="0" max="2" step="0.1" value="0.8">
                 <span class="setting-value" id="sun-intensity-value">0.8</span>
             </div>
+
+            <div class="setting-item" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.3);">
+                <h4 style="color: #FFD700; margin-bottom: 10px;">☀️ 태양 궤도 축 회전</h4>
+                <p style="font-size: 11px; color: #888; margin-bottom: 10px;">태양이 뜨고 지는 방향을 조절합니다</p>
+            </div>
+
+            <div class="setting-item">
+                <label>Pitch (X축 회전) <span style="font-size: 10px; color: #888;">동-서 축</span></label>
+                <input type="range" id="orbit-pitch" min="-180" max="180" step="1" value="0">
+                <span class="setting-value" id="orbit-pitch-value">0°</span>
+            </div>
+
+            <div class="setting-item">
+                <label>Yaw (Y축 회전) <span style="font-size: 10px; color: #888;">수직 축</span></label>
+                <input type="range" id="orbit-yaw" min="-180" max="180" step="1" value="0">
+                <span class="setting-value" id="orbit-yaw-value">0°</span>
+            </div>
+
+            <div class="setting-item">
+                <label>Roll (Z축 회전) <span style="font-size: 10px; color: #888;">남-북 축</span></label>
+                <input type="range" id="orbit-roll" min="-180" max="180" step="1" value="0">
+                <span class="setting-value" id="orbit-roll-value">0°</span>
+            </div>
+
+            <div class="setting-item">
+                <button id="reset-orbit" style="width: 100%; padding: 8px; background: #FF9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                    🔄 궤도 초기화
+                </button>
+            </div>
         </div>
 
         <div class="settings-section">

@@ -15,6 +15,13 @@ export class TimeOfDaySystem {
         this.sunIntensity = 0.8;
         this.sunDistance = 50;
 
+        // Sun orbit axis rotation (Euler angles in radians)
+        this.orbitRotation = {
+            x: 0,    // Pitch: rotate orbit around X-axis
+            y: 0,    // Yaw: rotate orbit around Y-axis
+            z: 0     // Roll: rotate orbit around Z-axis
+        };
+
         // Create visible sun mesh
         this.createSunMesh();
 
@@ -121,23 +128,39 @@ export class TimeOfDaySystem {
         // Sun rises at 6:00, sets at 18:00
         const sunAngle = ((time - 6) / 12) * Math.PI; // -PI to PI
 
-        // Position sun in arc across sky
-        const x = Math.cos(sunAngle) * this.sunDistance;
-        const y = Math.sin(sunAngle) * this.sunDistance;
-        const z = this.sunDistance * 0.5;
+        // Base position: sun in arc across sky (default: X-Y plane)
+        let x = Math.cos(sunAngle) * this.sunDistance;
+        let y = Math.sin(sunAngle) * this.sunDistance;
+        let z = 0; // Start on X-Y plane
 
-        this.directionalLight.position.set(x, y, z);
+        // Apply orbit axis rotation using rotation matrices
+        const position = new THREE.Vector3(x, y, z);
+
+        // Create rotation matrix from Euler angles
+        const rotationMatrix = new THREE.Matrix4();
+        const euler = new THREE.Euler(
+            this.orbitRotation.x,
+            this.orbitRotation.y,
+            this.orbitRotation.z,
+            'XYZ'
+        );
+        rotationMatrix.makeRotationFromEuler(euler);
+
+        // Apply rotation to position
+        position.applyMatrix4(rotationMatrix);
+
+        this.directionalLight.position.copy(position);
 
         // Update sun mesh position
         if (this.sunMesh) {
-            this.sunMesh.position.set(x, y, z);
+            this.sunMesh.position.copy(position);
 
             // Update sun color based on time
             const colors = this.getColorsForTime(time);
             this.sunMesh.material.color = colors.sun;
 
-            // Hide sun when below horizon
-            this.sunMesh.visible = y > 0;
+            // Hide sun when below horizon (based on rotated Y component)
+            this.sunMesh.visible = position.y > 0;
         }
     }
 
@@ -206,6 +229,57 @@ export class TimeOfDaySystem {
 
     setEnabled(enabled) {
         this.enabled = enabled;
+    }
+
+    /**
+     * Set sun orbit rotation around X-axis (pitch)
+     * @param {number} radians - Rotation in radians
+     */
+    setOrbitPitch(radians) {
+        this.orbitRotation.x = radians;
+        this.updateLighting();
+    }
+
+    /**
+     * Set sun orbit rotation around Y-axis (yaw)
+     * @param {number} radians - Rotation in radians
+     */
+    setOrbitYaw(radians) {
+        this.orbitRotation.y = radians;
+        this.updateLighting();
+    }
+
+    /**
+     * Set sun orbit rotation around Z-axis (roll)
+     * @param {number} radians - Rotation in radians
+     */
+    setOrbitRoll(radians) {
+        this.orbitRotation.z = radians;
+        this.updateLighting();
+    }
+
+    /**
+     * Set sun orbit rotation (all axes)
+     * @param {number} pitch - X-axis rotation in radians
+     * @param {number} yaw - Y-axis rotation in radians
+     * @param {number} roll - Z-axis rotation in radians
+     */
+    setOrbitRotation(pitch, yaw, roll) {
+        this.orbitRotation.x = pitch;
+        this.orbitRotation.y = yaw;
+        this.orbitRotation.z = roll;
+        this.updateLighting();
+    }
+
+    /**
+     * Get current orbit rotation in degrees
+     */
+    getOrbitRotationDegrees() {
+        return {
+            pitch: THREE.MathUtils.radToDeg(this.orbitRotation.x),
+            yaw: THREE.MathUtils.radToDeg(this.orbitRotation.y),
+            roll: THREE.MathUtils.radToDeg(this.orbitRotation.z)
+        };
     }
 
     getTimeString() {
