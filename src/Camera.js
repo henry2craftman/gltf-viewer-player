@@ -121,6 +121,11 @@ export class CameraController {
         this.thirdPersonHeight = height;
     }
 
+    setNearPlane(near) {
+        this.camera.near = near;
+        this.camera.updateProjectionMatrix();
+    }
+
     update(player) {
         switch (this.currentMode) {
             case this.modes.FIRST_PERSON:

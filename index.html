@@ -211,6 +211,12 @@
             <h3 data-i18n="player-settings">Player Settings</h3>
 
             <div class="setting-item">
+                <label>카메라 Near Plane</label>
+                <input type="range" id="camera-near" min="0.001" max="0.1" step="0.001" value="0.01">
+                <span class="setting-value" id="camera-near-value">0.01</span>
+            </div>
+
+            <div class="setting-item">
                 <label>플레이어 메시 크기 (3인칭 모드)</label>
                 <input type="range" id="player-scale" min="0.005" max="0.05" step="0.001" value="0.018">
                 <span class="setting-value" id="player-scale-value">0.018x</span>
@@ -336,7 +342,43 @@
             <div class="setting-item">
                 <label>
                     <input type="checkbox" id="enable-shadows" checked>
-                    그림자
+                    그림자 활성화
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <label>그림자 품질</label>
+                <select id="shadow-quality" style="width: 100%; padding: 5px; background: #333; color: white; border: 1px solid #555;">
+                    <option value="low">Low (1024px)</option>
+                    <option value="medium">Medium (2048px)</option>
+                    <option value="high" selected>High (4096px)</option>
+                    <option value="ultra">Ultra (8192px)</option>
+                </select>
+            </div>
+
+            <div class="setting-item">
+                <label>그림자 부드러움</label>
+                <input type="range" id="shadow-softness" min="0" max="5" step="0.5" value="1">
+                <span class="setting-value" id="shadow-softness-value">1.0</span>
+            </div>
+
+            <div class="setting-item">
+                <label>그림자 바이어스</label>
+                <input type="range" id="shadow-bias" min="-0.005" max="0.005" step="0.0001" value="-0.001">
+                <span class="setting-value" id="shadow-bias-value">-0.001</span>
+            </div>
+
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="show-light-helper">
+                    조명 방향 표시
+                </label>
+            </div>
+
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="show-shadow-helper">
+                    그림자 카메라 표시
                 </label>
             </div>
 
@@ -410,13 +452,31 @@
 
             <div class="setting-item">
                 <label>Directional Intensity</label>
-                <input type="range" id="direct-intensity" min="0" max="5" step="0.1" value="2.5">
-                <span class="setting-value" id="direct-intensity-value">2.5</span>
+                <input type="range" id="direct-intensity" min="0" max="10" step="0.1" value="3.5">
+                <span class="setting-value" id="direct-intensity-value">3.5</span>
             </div>
 
             <div class="setting-item">
                 <label>Directional Color</label>
                 <input type="color" id="direct-color" value="#ffffff" style="width: 100%; height: 30px; background: #333; border: 1px solid #555;">
+            </div>
+
+            <div class="setting-item">
+                <label>Light Direction X</label>
+                <input type="range" id="light-dir-x" min="-50" max="50" step="1" value="10">
+                <span class="setting-value" id="light-dir-x-value">10</span>
+            </div>
+
+            <div class="setting-item">
+                <label>Light Direction Y (Height)</label>
+                <input type="range" id="light-dir-y" min="0" max="50" step="1" value="20">
+                <span class="setting-value" id="light-dir-y-value">20</span>
+            </div>
+
+            <div class="setting-item">
+                <label>Light Direction Z</label>
+                <input type="range" id="light-dir-z" min="-50" max="50" step="1" value="10">
+                <span class="setting-value" id="light-dir-z-value">10</span>
             </div>
 
             <div class="setting-item">
@@ -515,6 +575,70 @@
                 <button id="trigger-glitch" style="width: 100%; padding: 10px; background: #E91E63; color: white; border: none; border-radius: 4px; cursor: pointer;">
                     글리치 트리거
                 </button>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3>🎯 Path Tracing (광선 추적)</h3>
+            <p style="font-size: 11px; color: #888; margin-bottom: 15px;">
+                GPU 가속 경로 추적을 사용한 사실적인 렌더링<br>
+                느리지만 매우 사실적인 결과를 제공합니다
+            </p>
+
+            <div class="setting-item">
+                <label style="font-weight: bold; font-size: 14px;">
+                    <input type="checkbox" id="enable-pathtracing">
+                    <span style="color: #4CAF50;">⚡ Path Tracing 활성화</span>
+                </label>
+                <div id="pathtracing-status" style="font-size: 11px; color: #888; margin-top: 5px; padding: 5px; border-radius: 3px; background: rgba(255,0,0,0.1);">
+                    ❌ 비활성화 (일반 렌더링)
+                </div>
+            </div>
+
+            <div class="setting-item">
+                <label>Glossy 필터 <span style="font-size: 10px; color: #888;">빠른 수렴</span></label>
+                <input type="range" id="pathtracer-glossy" min="0" max="1" step="0.05" value="0.5">
+                <span class="setting-value" id="pathtracer-glossy-value">0.50</span>
+            </div>
+
+            <div class="setting-item">
+                <label>해상도 스케일 <span style="font-size: 10px; color: #888;">낮추면 속도 향상</span></label>
+                <input type="range" id="pathtracer-scale" min="0.25" max="1.0" step="0.05" value="1.0">
+                <span class="setting-value" id="pathtracer-scale-value">100%</span>
+            </div>
+
+            <div class="setting-item">
+                <label>빛 반사 횟수 <span style="font-size: 10px; color: #888;">더 정확한 조명</span></label>
+                <input type="range" id="pathtracer-bounces" min="1" max="20" step="1" value="5">
+                <span class="setting-value" id="pathtracer-bounces-value">5</span>
+            </div>
+
+            <div class="setting-item">
+                <label>투명 반사 횟수 <span style="font-size: 10px; color: #888;">유리 등</span></label>
+                <input type="range" id="pathtracer-transmissive" min="1" max="20" step="1" value="10">
+                <span class="setting-value" id="pathtracer-transmissive-value">10</span>
+            </div>
+
+            <div class="setting-item">
+                <div style="background: rgba(33, 150, 243, 0.1); padding: 10px; border-radius: 4px; border-left: 3px solid #2196F3;">
+                    <div style="font-size: 11px; color: #2196F3; margin-bottom: 5px;">진행 상황</div>
+                    <div id="pathtracer-progress" style="font-size: 13px; font-weight: bold;">대기 중...</div>
+                    <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 5px; overflow: hidden;">
+                        <div id="pathtracer-progress-bar" style="width: 0%; height: 100%; background: #2196F3; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-item">
+                <button id="pathtracer-reset" style="width: 100%; padding: 10px; background: #FF9800; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    🔄 렌더링 재시작
+                </button>
+            </div>
+
+            <div class="setting-item">
+                <p style="font-size: 11px; color: #FFD700; background: rgba(255, 215, 0, 0.1); padding: 10px; border-radius: 4px;">
+                    ⚠️ Path Tracing은 GPU를 많이 사용합니다. 활성화 시 카메라 이동이 느려질 수 있습니다.
+                </p>
             </div>
         </div>
     </div>

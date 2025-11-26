@@ -7,6 +7,7 @@ import { Player } from './Player.js';
 import { PostProcessingManager } from './PostProcessing.js';
 import { TimeOfDaySystem } from './TimeOfDay.js';
 import { ParticleSystem } from './ParticleSystem.js';
+import { PathTracingRenderer } from './PathTracer.js';
 import { i18n } from './i18n.js';
 import gsap from 'gsap';
 
@@ -24,6 +25,7 @@ class GLTFViewer {
         this.environmentIntensity = 1.0;
         this.showBackground = true;
         this.backgroundBlurLevel = 0.0;
+        this.customHDRPath = null;
 
         this.setupRenderer();
         this.setupScene();
@@ -55,7 +57,23 @@ class GLTFViewer {
         // Particle system (like Igloo Inc.)
         this.particleSystem = new ParticleSystem(this.scene);
 
+        // Path tracing renderer
+        this.pathTracer = new PathTracingRenderer(
+            this.renderer,
+            this.scene,
+            this.cameraController.camera
+        );
+
+        // Initialize loaders with proper configuration
         this.gltfLoader = new GLTFLoader();
+
+        // Set up texture loader for GLTF
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.setCrossOrigin('anonymous');
+
+        // Configure GLTF loader
+        this.gltfLoader.setDRACOLoader(null); // Disable DRACO if not needed
+
         this.rgbeLoader = new RGBELoader();
         this.loadedModel = null;
 
@@ -72,23 +90,32 @@ class GLTFViewer {
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
-            powerPreference: "high-performance"
+            powerPreference: "high-performance",
+            // Additional options for better shadow quality
+            alpha: false,
+            stencil: false,
+            depth: true
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
 
-        // Shadow settings
+        // Unity-style shadow settings - enhanced for clear, dramatic shadows
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // High quality soft shadows
+        this.renderer.shadowMap.autoUpdate = true; // Ensure shadows update with scene changes
+        this.renderer.shadowMap.needsUpdate = true; // Force initial update
 
-        // PBR-optimized settings
-        this.renderer.physicallyCorrectLights = true; // Use physically correct lighting
+        // Lighting settings optimized for Unity-like rendering
+        this.renderer.physicallyCorrectLights = true; // Physically correct lighting
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping; // Film-like tone mapping
-        this.renderer.toneMappingExposure = 1.0; // Default exposure
+        this.renderer.toneMappingExposure = 1.2; // Slightly increased for Unity-like brightness
         this.renderer.outputColorSpace = THREE.SRGBColorSpace; // sRGB color space
 
         // Enable logarithmic depth buffer for better depth precision
         this.renderer.logarithmicDepthBuffer = true;
+
+        // Additional optimization for shadows
+        this.renderer.shadowMap.needsUpdate = true;
 
         // Initialize PMREM generator for environment maps
         this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
@@ -278,6 +305,9 @@ class GLTFViewer {
 
     loadCustomHDR(file) {
         const url = URL.createObjectURL(file);
+
+        // Store the file name for settings
+        this.customHDRPath = file.name;
 
         console.log('Loading HDR file:', file.name);
 
@@ -494,54 +524,162 @@ class GLTFViewer {
     }
 
     setupLights() {
-        // Reduce direct lighting since we have IBL environment
-        // PBR works best with environment lighting (IBL) as primary light source
+        // Unity-style directional light setup with strong, clear shadows
 
-        // Subtle ambient for base illumination
-        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        // Reduced ambient light for more dramatic shadows
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.2); // Lower intensity for Unity-like contrast
         this.scene.add(this.ambientLight);
 
-        // Main directional light (sun) - reduced intensity for PBR
-        this.directionalLight = new THREE.DirectionalLight(0xffffff, 2.5); // Intensity in lumens for physical lights
-        this.directionalLight.position.set(5, 10, 5);
+        // Main directional light (Unity-style sun) - increased intensity for clear shadows
+        this.directionalLight = new THREE.DirectionalLight(0xffffff, 3.5); // Stronger light for Unity-like look
+        this.directionalLight.position.set(10, 20, 10); // Higher position for better shadow angle
+
+        // Shadow configuration for Unity-like quality
         this.directionalLight.castShadow = true;
-        this.directionalLight.shadow.camera.left = -50;
-        this.directionalLight.shadow.camera.right = 50;
-        this.directionalLight.shadow.camera.top = 50;
-        this.directionalLight.shadow.camera.bottom = -50;
+
+        // Orthographic shadow camera for parallel shadows (like Unity's directional light)
+        this.directionalLight.shadow.camera.left = -40;
+        this.directionalLight.shadow.camera.right = 40;
+        this.directionalLight.shadow.camera.top = 40;
+        this.directionalLight.shadow.camera.bottom = -40;
         this.directionalLight.shadow.camera.near = 0.1;
-        this.directionalLight.shadow.camera.far = 200;
-        this.directionalLight.shadow.mapSize.width = 2048;
-        this.directionalLight.shadow.mapSize.height = 2048;
-        this.directionalLight.shadow.bias = -0.0005; // Reduce shadow acne
+        this.directionalLight.shadow.camera.far = 120;
+
+        // High-quality shadow map
+        this.directionalLight.shadow.mapSize.width = 4096;  // Higher resolution for sharper shadows
+        this.directionalLight.shadow.mapSize.height = 4096;
+
+        // Fine-tune shadow parameters for Unity-like appearance
+        this.directionalLight.shadow.bias = -0.001; // Adjusted for less acne
+        this.directionalLight.shadow.normalBias = 0.02; // Helps with self-shadowing
+        this.directionalLight.shadow.radius = 1; // Soft edge for PCF shadows
+        this.directionalLight.shadow.blurSamples = 25; // More samples for smoother shadows
+
         this.scene.add(this.directionalLight);
 
-        // Hemisphere light for subtle fill lighting
-        this.hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.2);
-        this.scene.add(this.hemisphereLight);
+        // Helper to visualize light direction (optional, can be toggled)
+        this.directionalLightHelper = new THREE.DirectionalLightHelper(this.directionalLight, 5);
+        this.directionalLightHelper.visible = false; // Hidden by default
+        this.scene.add(this.directionalLightHelper);
 
-        // Note: Main lighting comes from IBL environment map for proper PBR
+        // Shadow camera helper (optional, for debugging)
+        this.shadowCameraHelper = new THREE.CameraHelper(this.directionalLight.shadow.camera);
+        this.shadowCameraHelper.visible = false; // Hidden by default
+        this.scene.add(this.shadowCameraHelper);
+
+        // Subtle hemisphere light for ambient fill (Unity-style)
+        this.hemisphereLight = new THREE.HemisphereLight(0x87CEEB, 0x545454, 0.3); // Sky color and ground color
+        this.scene.add(this.hemisphereLight);
+    }
+
+    debugShadowSettings() {
+        // Debug function to check shadow settings for all meshes
+        if (this.loadedModel) {
+            let meshCount = 0;
+            let shadowCasters = 0;
+            let shadowReceivers = 0;
+            let problematicMeshes = [];
+
+            this.loadedModel.traverse((child) => {
+                if (child.isMesh) {
+                    meshCount++;
+                    if (child.castShadow) shadowCasters++;
+                    if (child.receiveShadow) shadowReceivers++;
+
+                    // Check for potential issues
+                    if (!child.castShadow || !child.receiveShadow) {
+                        problematicMeshes.push({
+                            name: child.name || 'Unnamed',
+                            castShadow: child.castShadow,
+                            receiveShadow: child.receiveShadow,
+                            material: child.material?.type || 'Unknown'
+                        });
+                    }
+
+                    // Special check for transparent materials
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach(mat => {
+                            if (mat && mat.transparent) {
+                                console.log(`Transparent material found on ${child.name || 'Unnamed'} - may affect shadows`);
+                            }
+                        });
+                    }
+                }
+            });
+
+            console.log('=== Shadow Debug Report ===');
+            console.log(`Total meshes: ${meshCount}`);
+            console.log(`Shadow casters: ${shadowCasters}`);
+            console.log(`Shadow receivers: ${shadowReceivers}`);
+            console.log(`Shadow camera bounds: L=${this.directionalLight.shadow.camera.left}, R=${this.directionalLight.shadow.camera.right}`);
+            console.log(`Shadow map size: ${this.directionalLight.shadow.mapSize.width}x${this.directionalLight.shadow.mapSize.height}`);
+
+            if (problematicMeshes.length > 0) {
+                console.warn('Meshes without proper shadow settings:', problematicMeshes);
+            }
+        }
+    }
+
+    updateShadowCameraForScene() {
+        // Dynamically adjust shadow camera to encompass entire scene
+        if (this.loadedModel) {
+            const box = new THREE.Box3().setFromObject(this.loadedModel);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+
+            // Adjust shadow camera frustum based on scene bounds
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const shadowCameraSize = maxDim * 1.5; // Add some padding
+
+            this.directionalLight.shadow.camera.left = -shadowCameraSize;
+            this.directionalLight.shadow.camera.right = shadowCameraSize;
+            this.directionalLight.shadow.camera.top = shadowCameraSize;
+            this.directionalLight.shadow.camera.bottom = -shadowCameraSize;
+
+            // Adjust near/far planes to capture all geometry
+            this.directionalLight.shadow.camera.near = 0.1;
+            this.directionalLight.shadow.camera.far = shadowCameraSize * 3;
+
+            // Update shadow camera
+            this.directionalLight.shadow.camera.updateProjectionMatrix();
+
+            // Force shadow map update
+            this.renderer.shadowMap.needsUpdate = true;
+
+            // Update helpers if visible
+            if (this.shadowCameraHelper?.visible) {
+                this.shadowCameraHelper.update();
+            }
+
+            console.log(`Shadow camera adjusted: size=${shadowCameraSize.toFixed(2)}, far=${(shadowCameraSize * 3).toFixed(2)}`);
+        }
     }
 
     setupGround() {
-        // Create a large ground plane with dark color
+        // Create a large ground plane optimized for shadow reception
         const groundGeometry = new THREE.PlaneGeometry(200, 200);
         const groundMaterial = new THREE.MeshStandardMaterial({
-            color: 0x222222, // Dark gray ground
-            roughness: 0.8,
-            metalness: 0.0,
-            opacity: 0.8,
-            transparent: true
+            color: 0x808080, // Medium gray for better shadow visibility
+            roughness: 0.9,  // High roughness for matte surface
+            metalness: 0.0,  // No metalness for proper shadow reception
+            opacity: 1.0,    // Fully opaque for clear shadows
+            transparent: false,
+            // Additional properties for better shadow reception
+            side: THREE.FrontSide,
+            shadowSide: THREE.FrontSide
         });
         this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
         this.ground.rotation.x = -Math.PI / 2;
-        this.ground.receiveShadow = true;
+        this.ground.receiveShadow = true; // Critical for receiving shadows
+        this.ground.castShadow = false;    // Ground doesn't cast shadows
         this.scene.add(this.ground);
 
-        // Add a grid helper
+        // Add a grid helper for spatial reference
         this.gridHelper = new THREE.GridHelper(200, 100, 0x444444, 0x444444);
         this.gridHelper.material.opacity = 0.3;
         this.gridHelper.material.transparent = true;
+        this.gridHelper.material.depthWrite = false; // Prevent z-fighting with shadows
         this.scene.add(this.gridHelper);
     }
 
@@ -579,19 +717,58 @@ class GLTFViewer {
     }
 
     loadGLTF(file) {
-        const url = URL.createObjectURL(file);
-
-        // Remove previous model
-        if (this.loadedModel) {
-            this.scene.remove(this.loadedModel);
+        // Revoke previous blob URL if exists
+        if (this.currentModelUrl) {
+            URL.revokeObjectURL(this.currentModelUrl);
+            this.currentModelUrl = null;
         }
+
+        // Remove previous model and dispose resources
+        if (this.loadedModel) {
+            // Dispose of geometries, materials, and textures
+            this.loadedModel.traverse((child) => {
+                if (child.isMesh) {
+                    // Dispose geometry
+                    if (child.geometry) {
+                        child.geometry.dispose();
+                    }
+
+                    // Dispose materials and textures
+                    if (child.material) {
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        materials.forEach(mat => {
+                            if (mat) {
+                                // Dispose textures
+                                Object.keys(mat).forEach(key => {
+                                    if (mat[key] && mat[key].isTexture) {
+                                        mat[key].dispose();
+                                    }
+                                });
+                                // Dispose material
+                                mat.dispose();
+                            }
+                        });
+                    }
+                }
+            });
+
+            this.scene.remove(this.loadedModel);
+            this.loadedModel = null;
+        }
+
+        // Create new blob URL
+        const url = URL.createObjectURL(file);
+        this.currentModelUrl = url;
+
+        // Configure loader with error handling
+        this.gltfLoader.setCrossOrigin('anonymous');
 
         this.gltfLoader.load(
             url,
             (gltf) => {
                 this.loadedModel = gltf.scene;
 
-                // Enable shadows
+                // Enable shadows - original simple setup
                 this.loadedModel.traverse((child) => {
                     if (child.isMesh) {
                         child.castShadow = true;
@@ -618,13 +795,38 @@ class GLTFViewer {
 
                 this.scene.add(this.loadedModel);
 
+                // Update path tracer scene
+                if (this.pathTracer) {
+                    this.pathTracer.setScene(this.scene, this.cameraController.camera);
+                }
+
                 console.log('GLTF loaded successfully');
+
+                // Clean up blob URL after successful load
+                // Don't revoke immediately as textures might still be loading
+                setTimeout(() => {
+                    if (this.currentModelUrl === url) {
+                        // URL.revokeObjectURL(url); // Keep commented to avoid texture loading issues
+                    }
+                }, 5000);
             },
             (progress) => {
-                console.log('Loading:', (progress.loaded / progress.total * 100) + '%');
+                if (progress.total > 0) {
+                    const percent = (progress.loaded / progress.total * 100).toFixed(1);
+                    console.log(`Loading: ${percent}%`);
+                }
             },
             (error) => {
                 console.error('Error loading GLTF:', error);
+
+                // Clean up on error
+                if (this.currentModelUrl === url) {
+                    URL.revokeObjectURL(url);
+                    this.currentModelUrl = null;
+                }
+
+                // Show user-friendly error message
+                alert('Failed to load 3D model. Please check the file format and try again.');
             }
         );
     }
@@ -639,6 +841,14 @@ class GLTFViewer {
         });
 
         // Player settings
+        const cameraNear = document.getElementById('camera-near');
+        const cameraNearValue = document.getElementById('camera-near-value');
+        cameraNear.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.cameraController.setNearPlane(value);
+            cameraNearValue.textContent = value.toFixed(3);
+        });
+
         const playerScale = document.getElementById('player-scale');
         const playerScaleValue = document.getElementById('player-scale-value');
         playerScale.addEventListener('input', (e) => {
@@ -783,7 +993,79 @@ class GLTFViewer {
         enableShadows.addEventListener('change', (e) => {
             this.renderer.shadowMap.enabled = e.target.checked;
             this.directionalLight.castShadow = e.target.checked;
+            this.renderer.shadowMap.needsUpdate = true;
         });
+
+        // Shadow quality control
+        const shadowQuality = document.getElementById('shadow-quality');
+        if (shadowQuality) {
+            shadowQuality.addEventListener('change', (e) => {
+                let resolution;
+                switch(e.target.value) {
+                    case 'low': resolution = 1024; break;
+                    case 'medium': resolution = 2048; break;
+                    case 'high': resolution = 4096; break;
+                    case 'ultra': resolution = 8192; break;
+                    default: resolution = 4096;
+                }
+                this.directionalLight.shadow.mapSize.width = resolution;
+                this.directionalLight.shadow.mapSize.height = resolution;
+                this.directionalLight.shadow.map?.dispose(); // Dispose old shadow map
+                this.directionalLight.shadow.map = null;
+                this.directionalLight.shadow.needsUpdate = true;
+                this.renderer.shadowMap.needsUpdate = true;
+            });
+        }
+
+        // Shadow softness control
+        const shadowSoftness = document.getElementById('shadow-softness');
+        const shadowSoftnessValue = document.getElementById('shadow-softness-value');
+        if (shadowSoftness) {
+            shadowSoftness.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.directionalLight.shadow.radius = value;
+                shadowSoftnessValue.textContent = value.toFixed(1);
+                this.renderer.shadowMap.needsUpdate = true;
+            });
+        }
+
+        // Shadow bias control
+        const shadowBias = document.getElementById('shadow-bias');
+        const shadowBiasValue = document.getElementById('shadow-bias-value');
+        if (shadowBias) {
+            shadowBias.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.directionalLight.shadow.bias = value;
+                shadowBiasValue.textContent = value.toFixed(4);
+                this.renderer.shadowMap.needsUpdate = true;
+            });
+        }
+
+        // Light helper toggle
+        const showLightHelper = document.getElementById('show-light-helper');
+        if (showLightHelper) {
+            showLightHelper.addEventListener('change', (e) => {
+                if (this.directionalLightHelper) {
+                    this.directionalLightHelper.visible = e.target.checked;
+                    if (e.target.checked) {
+                        this.directionalLightHelper.update();
+                    }
+                }
+            });
+        }
+
+        // Shadow camera helper toggle
+        const showShadowHelper = document.getElementById('show-shadow-helper');
+        if (showShadowHelper) {
+            showShadowHelper.addEventListener('change', (e) => {
+                if (this.shadowCameraHelper) {
+                    this.shadowCameraHelper.visible = e.target.checked;
+                    if (e.target.checked) {
+                        this.shadowCameraHelper.update();
+                    }
+                }
+            });
+        }
 
         const enableFog = document.getElementById('enable-fog');
         enableFog.addEventListener('change', (e) => {
@@ -889,6 +1171,58 @@ class GLTFViewer {
             });
         }
 
+        // Light direction controls
+        const lightDirX = document.getElementById('light-dir-x');
+        const lightDirXValue = document.getElementById('light-dir-x-value');
+        if (lightDirX) {
+            lightDirX.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.directionalLight.position.x = value;
+                lightDirXValue.textContent = value;
+                if (this.directionalLightHelper?.visible) {
+                    this.directionalLightHelper.update();
+                }
+                if (this.shadowCameraHelper?.visible) {
+                    this.shadowCameraHelper.update();
+                }
+                this.renderer.shadowMap.needsUpdate = true;
+            });
+        }
+
+        const lightDirY = document.getElementById('light-dir-y');
+        const lightDirYValue = document.getElementById('light-dir-y-value');
+        if (lightDirY) {
+            lightDirY.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.directionalLight.position.y = value;
+                lightDirYValue.textContent = value;
+                if (this.directionalLightHelper?.visible) {
+                    this.directionalLightHelper.update();
+                }
+                if (this.shadowCameraHelper?.visible) {
+                    this.shadowCameraHelper.update();
+                }
+                this.renderer.shadowMap.needsUpdate = true;
+            });
+        }
+
+        const lightDirZ = document.getElementById('light-dir-z');
+        const lightDirZValue = document.getElementById('light-dir-z-value');
+        if (lightDirZ) {
+            lightDirZ.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                this.directionalLight.position.z = value;
+                lightDirZValue.textContent = value;
+                if (this.directionalLightHelper?.visible) {
+                    this.directionalLightHelper.update();
+                }
+                if (this.shadowCameraHelper?.visible) {
+                    this.shadowCameraHelper.update();
+                }
+                this.renderer.shadowMap.needsUpdate = true;
+            });
+        }
+
         // Environment intensity for PBR
         const envIntensity = document.getElementById('env-intensity');
         const envIntensityValue = document.getElementById('env-intensity-value');
@@ -974,6 +1308,75 @@ class GLTFViewer {
             }
         });
 
+        // Path Tracing controls
+        const enablePathTracing = document.getElementById('enable-pathtracing');
+        const pathtracingStatus = document.getElementById('pathtracing-status');
+        enablePathTracing.addEventListener('change', (e) => {
+            if (this.pathTracer) {
+                this.pathTracer.setEnabled(e.target.checked);
+
+                // Update status display
+                if (e.target.checked) {
+                    pathtracingStatus.textContent = '✅ 활성화 (Path Tracing 렌더링 중...)';
+                    pathtracingStatus.style.background = 'rgba(76, 175, 80, 0.2)';
+                    pathtracingStatus.style.color = '#4CAF50';
+                } else {
+                    pathtracingStatus.textContent = '❌ 비활성화 (일반 렌더링)';
+                    pathtracingStatus.style.background = 'rgba(255, 0, 0, 0.1)';
+                    pathtracingStatus.style.color = '#888';
+                }
+            }
+        });
+
+        const pathtracerGlossy = document.getElementById('pathtracer-glossy');
+        const pathtracerGlossyValue = document.getElementById('pathtracer-glossy-value');
+        if (pathtracerGlossy) {
+            pathtracerGlossy.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                if (this.pathTracer) {
+                    this.pathTracer.setFilterGlossyFactor(value);
+                }
+                pathtracerGlossyValue.textContent = value.toFixed(2);
+            });
+        }
+
+        const pathtracerScale = document.getElementById('pathtracer-scale');
+        const pathtracerScaleValue = document.getElementById('pathtracer-scale-value');
+        pathtracerScale.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            if (this.pathTracer) {
+                this.pathTracer.setRenderScale(value);
+            }
+            pathtracerScaleValue.textContent = value.toFixed(2);
+        });
+
+        const pathtracerBounces = document.getElementById('pathtracer-bounces');
+        const pathtracerBouncesValue = document.getElementById('pathtracer-bounces-value');
+        pathtracerBounces.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            if (this.pathTracer) {
+                this.pathTracer.setBounces(value);
+            }
+            pathtracerBouncesValue.textContent = value;
+        });
+
+        const pathtracerTransmissive = document.getElementById('pathtracer-transmissive');
+        const pathtracerTransmissiveValue = document.getElementById('pathtracer-transmissive-value');
+        pathtracerTransmissive.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            if (this.pathTracer) {
+                this.pathTracer.setTransmissiveBounces(value);
+            }
+            pathtracerTransmissiveValue.textContent = value;
+        });
+
+        const pathtracerReset = document.getElementById('pathtracer-reset');
+        pathtracerReset.addEventListener('click', () => {
+            if (this.pathTracer) {
+                this.pathTracer.reset();
+            }
+        });
+
         // Settings management
         const saveSettings = document.getElementById('save-settings');
         if (saveSettings) {
@@ -1025,6 +1428,19 @@ class GLTFViewer {
             groundLevel: this.player.groundLevel,
             thirdPersonDistance: this.cameraController.thirdPersonDistance,
             thirdPersonHeight: this.cameraController.thirdPersonHeight,
+            cameraNear: this.cameraController.camera.near,
+
+            // Player and Camera position
+            playerPosition: {
+                x: this.player.position.x,
+                y: this.player.position.y,
+                z: this.player.position.z
+            },
+            cameraRotation: {
+                yaw: this.cameraController.yaw,
+                pitch: this.cameraController.pitch
+            },
+            cameraMode: this.cameraController.currentMode,
 
             // Post-processing
             postProcessingEnabled: this.postProcessing?.enabled || false,
@@ -1047,6 +1463,7 @@ class GLTFViewer {
 
             // Environment & Lighting
             environment: this.currentEnvironment,
+            customHDRPath: this.customHDRPath || null,
             toneMapping: this.getToneMappingName(),
             exposure: this.renderer.toneMappingExposure,
             punctualLights: this.punctualLightsEnabled,
@@ -1066,6 +1483,13 @@ class GLTFViewer {
 
             // Glitch
             glitchEnabled: this.postProcessing?.glitchEnabled || false,
+
+            // Path Tracing
+            pathTracingEnabled: this.pathTracer?.enabled || false,
+            pathTracingGlossy: this.pathTracer?.filterGlossyFactor || 0.5,
+            pathTracingScale: this.pathTracer?.renderScale || 1.0,
+            pathTracingBounces: this.pathTracer?.bounces || 5,
+            pathTracingTransmissive: this.pathTracer?.transmissiveBounces || 10,
 
             timestamp: new Date().toISOString()
         };
@@ -1168,6 +1592,34 @@ class GLTFViewer {
             document.getElementById('third-person-height').value = settings.thirdPersonHeight;
             document.getElementById('third-person-height-value').textContent = settings.thirdPersonHeight.toFixed(3) + 'm';
         }
+        if (settings.cameraNear !== undefined) {
+            this.cameraController.setNearPlane(settings.cameraNear);
+            document.getElementById('camera-near').value = settings.cameraNear;
+            document.getElementById('camera-near-value').textContent = settings.cameraNear.toFixed(3);
+        }
+
+        // Player and Camera position
+        if (settings.playerPosition !== undefined) {
+            this.player.position.set(
+                settings.playerPosition.x,
+                settings.playerPosition.y,
+                settings.playerPosition.z
+            );
+        }
+        if (settings.cameraRotation !== undefined) {
+            this.cameraController.yaw = settings.cameraRotation.yaw;
+            this.cameraController.pitch = settings.cameraRotation.pitch;
+        }
+        if (settings.cameraMode !== undefined) {
+            this.cameraController.setMode(settings.cameraMode);
+            // Update UI buttons
+            document.querySelectorAll('.mode-button').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.mode === settings.cameraMode) {
+                    btn.classList.add('active');
+                }
+            });
+        }
 
         // Post-processing
         if (this.postProcessing) {
@@ -1252,6 +1704,11 @@ class GLTFViewer {
             this.setEnvironment(settings.environment);
             document.getElementById('environment-select').value = settings.environment;
         }
+        if (settings.customHDRPath !== undefined && settings.customHDRPath !== null) {
+            this.customHDRPath = settings.customHDRPath;
+            console.log('Custom HDR path restored:', settings.customHDRPath);
+            // Note: Cannot reload HDR file automatically, user needs to re-select it
+        }
         if (settings.toneMapping !== undefined) {
             this.setToneMapping(settings.toneMapping);
             document.getElementById('tone-mapping').value = settings.toneMapping;
@@ -1324,6 +1781,34 @@ class GLTFViewer {
                 document.getElementById('particle-speed-value').textContent = settings.particleSpeed.toFixed(1);
             }
         }
+
+        // Path Tracing
+        if (this.pathTracer) {
+            if (settings.pathTracingEnabled !== undefined) {
+                this.pathTracer.setEnabled(settings.pathTracingEnabled);
+                document.getElementById('enable-pathtracing').checked = settings.pathTracingEnabled;
+            }
+            if (settings.pathTracingGlossy !== undefined) {
+                this.pathTracer.setFilterGlossyFactor(settings.pathTracingGlossy);
+                document.getElementById('pathtracer-glossy').value = settings.pathTracingGlossy;
+                document.getElementById('pathtracer-glossy-value').textContent = settings.pathTracingGlossy.toFixed(2);
+            }
+            if (settings.pathTracingScale !== undefined) {
+                this.pathTracer.setRenderScale(settings.pathTracingScale);
+                document.getElementById('pathtracer-scale').value = settings.pathTracingScale;
+                document.getElementById('pathtracer-scale-value').textContent = settings.pathTracingScale.toFixed(2);
+            }
+            if (settings.pathTracingBounces !== undefined) {
+                this.pathTracer.setBounces(settings.pathTracingBounces);
+                document.getElementById('pathtracer-bounces').value = settings.pathTracingBounces;
+                document.getElementById('pathtracer-bounces-value').textContent = settings.pathTracingBounces;
+            }
+            if (settings.pathTracingTransmissive !== undefined) {
+                this.pathTracer.setTransmissiveBounces(settings.pathTracingTransmissive);
+                document.getElementById('pathtracer-transmissive').value = settings.pathTracingTransmissive;
+                document.getElementById('pathtracer-transmissive-value').textContent = settings.pathTracingTransmissive;
+            }
+        }
     }
 
     getToneMappingName() {
@@ -1352,9 +1837,22 @@ class GLTFViewer {
         const deltaTime = this.clock.getDelta();
 
         try {
+            // Store previous camera position to detect movement
+            const prevCameraPos = this.cameraController.camera.position.clone();
+            const prevCameraRot = this.cameraController.camera.rotation.clone();
+
             // Update player and camera
             this.player.update(deltaTime, this.cameraController);
             this.cameraController.update(this.player);
+
+            // Update path tracer camera if it moved
+            if (this.pathTracer && this.pathTracer.enabled) {
+                const camMoved = !prevCameraPos.equals(this.cameraController.camera.position) ||
+                                !prevCameraRot.equals(this.cameraController.camera.rotation);
+                if (camMoved) {
+                    this.pathTracer.updateCamera();
+                }
+            }
 
             // Update time of day
             this.timeOfDay.update(deltaTime);
@@ -1377,8 +1875,27 @@ class GLTFViewer {
             // Environment map updates removed to fix keyboard input issues
             // PBR reflections will use static environment for now
 
+            // Update path tracer and progress (matching example)
+            if (this.pathTracer && this.pathTracer.enabled) {
+                this.pathTracer.update();
+
+                // Update progress indicator
+                const progressDiv = document.getElementById('pathtracer-progress');
+                if (progressDiv) {
+                    const samples = this.pathTracer.samples;
+                    const compiling = this.pathTracer.isCompiling;
+                    const cameraMode = this.cameraController.currentMode;
+                    progressDiv.textContent = compiling ?
+                        `Compiling shaders...` :
+                        `Samples: ${samples} | Camera: ${cameraMode}`;
+                }
+            }
+
             // Render
-            if (this.postProcessing && this.postProcessing.enabled) {
+            if (this.pathTracer && this.pathTracer.enabled) {
+                // Path tracing handles rendering internally
+                // No additional render call needed
+            } else if (this.postProcessing && this.postProcessing.enabled) {
                 this.postProcessing.render(deltaTime);
             } else {
                 this.renderer.render(this.scene, this.cameraController.camera);
