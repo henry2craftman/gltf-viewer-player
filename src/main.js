@@ -11,6 +11,65 @@ import { PathTracingRenderer } from './PathTracer.js';
 import { i18n } from './i18n.js';
 import gsap from 'gsap';
 
+// IndexedDB helper for HDR file storage
+const HDRStorage = {
+    DB_NAME: 'GLTFViewerDB',
+    STORE_NAME: 'hdrFiles',
+    DB_VERSION: 1,
+
+    async openDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+                    db.createObjectStore(this.STORE_NAME, { keyPath: 'id' });
+                }
+            };
+        });
+    },
+
+    async saveHDR(arrayBuffer, fileName) {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([this.STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(this.STORE_NAME);
+            const request = store.put({
+                id: 'lastHDR',
+                data: arrayBuffer,
+                fileName: fileName,
+                timestamp: Date.now()
+            });
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async loadHDR() {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([this.STORE_NAME], 'readonly');
+            const store = transaction.objectStore(this.STORE_NAME);
+            const request = store.get('lastHDR');
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async deleteHDR() {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([this.STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(this.STORE_NAME);
+            const request = store.delete('lastHDR');
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+};
+
 class GLTFViewer {
     constructor() {
         this.canvas = document.getElementById('canvas');
@@ -311,6 +370,18 @@ class GLTFViewer {
 
         console.log('Loading HDR file:', file.name);
 
+        // Save HDR file to IndexedDB for persistence
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                await HDRStorage.saveHDR(e.target.result, file.name);
+                console.log('HDR file saved to IndexedDB:', file.name);
+            } catch (error) {
+                console.warn('Failed to save HDR to IndexedDB:', error);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+
         this.rgbeLoader.load(
             url,
             (texture) => {
@@ -410,6 +481,144 @@ class GLTFViewer {
         );
     }
 
+    /**
+     * Load HDR from a URL/path (for project HDR files)
+     */
+    loadHDRFromPath(path) {
+        console.log('Loading HDR from path:', path);
+        this.customHDRPath = path;
+
+        return new Promise((resolve) => {
+            this.rgbeLoader.load(
+                path,
+                (texture) => {
+                    console.log('HDR texture loaded from path:', path);
+
+                    texture.mapping = THREE.EquirectangularReflectionMapping;
+                    texture.needsUpdate = true;
+
+                    const pmremTarget = this.pmremGenerator.fromEquirectangular(texture);
+                    const environmentTexture = pmremTarget.texture;
+
+                    this.environments['Custom'] = environmentTexture;
+                    this.environments['CustomBackground'] = texture;
+
+                    this.showBackground = true;
+                    const showBackgroundCheckbox = document.getElementById('show-background');
+                    if (showBackgroundCheckbox) {
+                        showBackgroundCheckbox.checked = true;
+                    }
+
+                    this.scene.environment = environmentTexture;
+                    this.scene.background = texture;
+                    this.currentEnvironment = 'Custom';
+
+                    this.createHDRBackgroundSphere(texture);
+
+                    const currentExposure = this.renderer.toneMappingExposure;
+                    this.renderer.toneMappingExposure = Math.max(currentExposure, 1.5);
+
+                    const exposureSlider = document.getElementById('exposure');
+                    const exposureValue = document.getElementById('exposure-value');
+                    if (exposureSlider && exposureValue) {
+                        exposureSlider.value = this.renderer.toneMappingExposure;
+                        exposureValue.textContent = this.renderer.toneMappingExposure.toFixed(2);
+                    }
+
+                    if (this.ground) this.ground.visible = false;
+                    if (this.gridHelper) this.gridHelper.visible = false;
+
+                    const environmentSelect = document.getElementById('environment-select');
+                    if (environmentSelect) {
+                        environmentSelect.value = 'Custom';
+                    }
+
+                    console.log('HDR loaded from path successfully:', path);
+                    resolve(true);
+                },
+                (progress) => {
+                    if (progress.total > 0) {
+                        const percent = (progress.loaded / progress.total * 100).toFixed(1);
+                        console.log('Loading HDR:', percent + '%');
+                    }
+                },
+                (error) => {
+                    console.error('Error loading HDR from path:', error);
+                    resolve(false);
+                }
+            );
+        });
+    }
+
+    /**
+     * Load HDR from IndexedDB (for restoring saved settings)
+     */
+    async loadHDRFromStorage() {
+        try {
+            const hdrData = await HDRStorage.loadHDR();
+            if (!hdrData || !hdrData.data) {
+                console.log('No saved HDR found in IndexedDB');
+                return false;
+            }
+
+            console.log('Loading HDR from IndexedDB:', hdrData.fileName);
+            this.customHDRPath = hdrData.fileName;
+
+            // Create blob from ArrayBuffer
+            const blob = new Blob([hdrData.data], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+
+            return new Promise((resolve) => {
+                this.rgbeLoader.load(
+                    url,
+                    (texture) => {
+                        console.log('HDR texture loaded from IndexedDB');
+
+                        texture.mapping = THREE.EquirectangularReflectionMapping;
+                        texture.needsUpdate = true;
+
+                        const pmremTarget = this.pmremGenerator.fromEquirectangular(texture);
+                        const environmentTexture = pmremTarget.texture;
+
+                        this.environments['Custom'] = environmentTexture;
+                        this.environments['CustomBackground'] = texture;
+
+                        this.showBackground = true;
+                        const showBackgroundCheckbox = document.getElementById('show-background');
+                        if (showBackgroundCheckbox) {
+                            showBackgroundCheckbox.checked = true;
+                        }
+
+                        this.scene.environment = environmentTexture;
+                        this.scene.background = texture;
+                        this.currentEnvironment = 'Custom';
+
+                        this.createHDRBackgroundSphere(texture);
+
+                        if (this.ground) this.ground.visible = false;
+                        if (this.gridHelper) this.gridHelper.visible = false;
+
+                        const environmentSelect = document.getElementById('environment-select');
+                        if (environmentSelect) {
+                            environmentSelect.value = 'Custom';
+                        }
+
+                        console.log('HDR restored from IndexedDB successfully:', hdrData.fileName);
+                        resolve(true);
+                    },
+                    undefined,
+                    (error) => {
+                        console.error('Error loading HDR from IndexedDB:', error);
+                        resolve(false);
+                    }
+                );
+            });
+        } catch (error) {
+            console.error('Error accessing IndexedDB for HDR:', error);
+            return false;
+        }
+    }
+
     setEnvironment(envName) {
         // Handle None environment
         if (envName === 'None') {
@@ -447,6 +656,28 @@ class GLTFViewer {
         if (this.environments[envName]) {
             this.environments[envName].dispose();
             delete this.environments[envName];
+        }
+
+        // HDR preset paths mapping
+        const hdrPresets = {
+            'CitrusOrchard': 'envrionments/citrus_orchard_road_puresky_4k.hdr',
+            'SunnyRoseGarden': 'envrionments/sunny_rose_garden_4k.hdr'
+        };
+
+        // Check if it's an HDR preset
+        if (hdrPresets[envName]) {
+            this.loadHDRFromPath(hdrPresets[envName]).then((success) => {
+                if (success) {
+                    this.currentEnvironment = envName;
+                    // Update customHDRPath for settings save
+                    this.customHDRPath = hdrPresets[envName];
+                } else {
+                    console.error('Failed to load HDR preset:', envName);
+                    // Fallback to Studio
+                    this.setEnvironment('Studio');
+                }
+            });
+            return;
         }
 
         // Create environment
@@ -1436,11 +1667,22 @@ class GLTFViewer {
                 y: this.player.position.y,
                 z: this.player.position.z
             },
+            cameraPosition: {
+                x: this.cameraController.camera.position.x,
+                y: this.cameraController.camera.position.y,
+                z: this.cameraController.camera.position.z
+            },
             cameraRotation: {
                 yaw: this.cameraController.yaw,
                 pitch: this.cameraController.pitch
             },
             cameraMode: this.cameraController.currentMode,
+            orbitDistance: this.cameraController.orbitDistance || 10,
+            orbitTarget: this.cameraController.orbitTarget ? {
+                x: this.cameraController.orbitTarget.x,
+                y: this.cameraController.orbitTarget.y,
+                z: this.cameraController.orbitTarget.z
+            } : { x: 0, y: 0, z: 0 },
 
             // Post-processing
             postProcessingEnabled: this.postProcessing?.enabled || false,
@@ -1456,8 +1698,18 @@ class GLTFViewer {
             orbitYaw: this.timeOfDay.orbitRotation.y,
             orbitRoll: this.timeOfDay.orbitRotation.z,
 
-            // Graphics
+            // Graphics - Shadows
             shadowsEnabled: this.renderer.shadowMap.enabled,
+            shadowQuality: this.getShadowQualityName(),
+            shadowSoftness: this.directionalLight.shadow.radius,
+            shadowBias: this.directionalLight.shadow.bias,
+
+            // Graphics - Light direction
+            lightDirX: this.directionalLight.position.x,
+            lightDirY: this.directionalLight.position.y,
+            lightDirZ: this.directionalLight.position.z,
+
+            // Graphics - Other
             fogEnabled: this.scene.fog !== null,
             pixelRatio: this.renderer.getPixelRatio() / window.devicePixelRatio,
 
@@ -1606,9 +1858,26 @@ class GLTFViewer {
                 settings.playerPosition.z
             );
         }
+        if (settings.cameraPosition !== undefined) {
+            this.cameraController.camera.position.set(
+                settings.cameraPosition.x,
+                settings.cameraPosition.y,
+                settings.cameraPosition.z
+            );
+        }
         if (settings.cameraRotation !== undefined) {
             this.cameraController.yaw = settings.cameraRotation.yaw;
             this.cameraController.pitch = settings.cameraRotation.pitch;
+        }
+        if (settings.orbitDistance !== undefined && this.cameraController.orbitDistance !== undefined) {
+            this.cameraController.orbitDistance = settings.orbitDistance;
+        }
+        if (settings.orbitTarget !== undefined && this.cameraController.orbitTarget) {
+            this.cameraController.orbitTarget.set(
+                settings.orbitTarget.x,
+                settings.orbitTarget.y,
+                settings.orbitTarget.z
+            );
         }
         if (settings.cameraMode !== undefined) {
             this.cameraController.setMode(settings.cameraMode);
@@ -1679,12 +1948,79 @@ class GLTFViewer {
             document.getElementById('orbit-roll-value').textContent = degrees.toFixed(0) + '°';
         }
 
-        // Graphics
+        // Graphics - Shadows
         if (settings.shadowsEnabled !== undefined) {
             this.renderer.shadowMap.enabled = settings.shadowsEnabled;
             this.directionalLight.castShadow = settings.shadowsEnabled;
             document.getElementById('enable-shadows').checked = settings.shadowsEnabled;
         }
+        if (settings.shadowQuality !== undefined) {
+            let resolution;
+            switch(settings.shadowQuality) {
+                case 'low': resolution = 1024; break;
+                case 'medium': resolution = 2048; break;
+                case 'high': resolution = 4096; break;
+                case 'ultra': resolution = 8192; break;
+                default: resolution = 4096;
+            }
+            this.directionalLight.shadow.mapSize.width = resolution;
+            this.directionalLight.shadow.mapSize.height = resolution;
+            this.directionalLight.shadow.map?.dispose();
+            this.directionalLight.shadow.map = null;
+            this.directionalLight.shadow.needsUpdate = true;
+            this.renderer.shadowMap.needsUpdate = true;
+            const shadowQualitySelect = document.getElementById('shadow-quality');
+            if (shadowQualitySelect) shadowQualitySelect.value = settings.shadowQuality;
+        }
+        if (settings.shadowSoftness !== undefined) {
+            this.directionalLight.shadow.radius = settings.shadowSoftness;
+            this.renderer.shadowMap.needsUpdate = true;
+            const shadowSoftnessSlider = document.getElementById('shadow-softness');
+            const shadowSoftnessValue = document.getElementById('shadow-softness-value');
+            if (shadowSoftnessSlider) shadowSoftnessSlider.value = settings.shadowSoftness;
+            if (shadowSoftnessValue) shadowSoftnessValue.textContent = settings.shadowSoftness.toFixed(1);
+        }
+        if (settings.shadowBias !== undefined) {
+            this.directionalLight.shadow.bias = settings.shadowBias;
+            this.renderer.shadowMap.needsUpdate = true;
+            const shadowBiasSlider = document.getElementById('shadow-bias');
+            const shadowBiasValue = document.getElementById('shadow-bias-value');
+            if (shadowBiasSlider) shadowBiasSlider.value = settings.shadowBias;
+            if (shadowBiasValue) shadowBiasValue.textContent = settings.shadowBias.toFixed(4);
+        }
+
+        // Graphics - Light direction
+        if (settings.lightDirX !== undefined) {
+            this.directionalLight.position.x = settings.lightDirX;
+            const lightDirXSlider = document.getElementById('light-dir-x');
+            const lightDirXValue = document.getElementById('light-dir-x-value');
+            if (lightDirXSlider) lightDirXSlider.value = settings.lightDirX;
+            if (lightDirXValue) lightDirXValue.textContent = settings.lightDirX;
+        }
+        if (settings.lightDirY !== undefined) {
+            this.directionalLight.position.y = settings.lightDirY;
+            const lightDirYSlider = document.getElementById('light-dir-y');
+            const lightDirYValue = document.getElementById('light-dir-y-value');
+            if (lightDirYSlider) lightDirYSlider.value = settings.lightDirY;
+            if (lightDirYValue) lightDirYValue.textContent = settings.lightDirY;
+        }
+        if (settings.lightDirZ !== undefined) {
+            this.directionalLight.position.z = settings.lightDirZ;
+            const lightDirZSlider = document.getElementById('light-dir-z');
+            const lightDirZValue = document.getElementById('light-dir-z-value');
+            if (lightDirZSlider) lightDirZSlider.value = settings.lightDirZ;
+            if (lightDirZValue) lightDirZValue.textContent = settings.lightDirZ;
+        }
+        // Update light helpers if visible
+        if (this.directionalLightHelper?.visible) {
+            this.directionalLightHelper.update();
+        }
+        if (this.shadowCameraHelper?.visible) {
+            this.shadowCameraHelper.update();
+        }
+        this.renderer.shadowMap.needsUpdate = true;
+
+        // Graphics - Other
         if (settings.fogEnabled !== undefined) {
             if (settings.fogEnabled) {
                 this.scene.fog = new THREE.Fog(0x87CEEB, 10, 100);
@@ -1700,14 +2036,69 @@ class GLTFViewer {
         }
 
         // Environment & Lighting
-        if (settings.environment !== undefined && settings.environment !== 'Custom') {
-            this.setEnvironment(settings.environment);
-            document.getElementById('environment-select').value = settings.environment;
+        if (settings.environment !== undefined) {
+            // HDR filename to preset mapping (for backwards compatibility)
+            const hdrFileToPreset = {
+                'citrus_orchard_road_puresky_4k.hdr': 'CitrusOrchard',
+                'sunny_rose_garden_4k.hdr': 'SunnyRoseGarden'
+            };
+
+            // Check if customHDRPath matches a known preset
+            let resolvedEnvironment = settings.environment;
+            if (settings.customHDRPath) {
+                const fileName = settings.customHDRPath.split('/').pop().split('\\').pop();
+                if (hdrFileToPreset[fileName]) {
+                    resolvedEnvironment = hdrFileToPreset[fileName];
+                    console.log('Resolved HDR filename to preset:', fileName, '->', resolvedEnvironment);
+                }
+            }
+
+            if (resolvedEnvironment === 'Custom' && settings.customHDRPath) {
+                // Check if it's a file path (contains / or \) or just a filename
+                const isFilePath = settings.customHDRPath.includes('/') || settings.customHDRPath.includes('\\');
+
+                if (isFilePath) {
+                    // Load from file path (project HDR files)
+                    console.log('Loading HDR from saved path:', settings.customHDRPath);
+                    this.loadHDRFromPath(settings.customHDRPath).then((success) => {
+                        if (!success) {
+                            console.log('Could not load HDR from path, trying IndexedDB...');
+                            this.loadHDRFromStorage().then((storageSuccess) => {
+                                if (!storageSuccess) {
+                                    console.log('Could not restore Custom HDR, falling back to Studio');
+                                    this.setEnvironment('Studio');
+                                    document.getElementById('environment-select').value = 'Studio';
+                                }
+                            });
+                        }
+                    });
+                } else {
+                    // Try to load from IndexedDB (uploaded file)
+                    this.loadHDRFromStorage().then((success) => {
+                        if (!success) {
+                            console.log('Could not restore Custom HDR from IndexedDB, falling back to Studio');
+                            this.setEnvironment('Studio');
+                            document.getElementById('environment-select').value = 'Studio';
+                        }
+                    });
+                }
+            } else if (resolvedEnvironment === 'Custom') {
+                // No path saved, try IndexedDB
+                this.loadHDRFromStorage().then((success) => {
+                    if (!success) {
+                        console.log('Could not restore Custom HDR, falling back to Studio');
+                        this.setEnvironment('Studio');
+                        document.getElementById('environment-select').value = 'Studio';
+                    }
+                });
+            } else {
+                this.setEnvironment(resolvedEnvironment);
+                document.getElementById('environment-select').value = resolvedEnvironment;
+            }
         }
         if (settings.customHDRPath !== undefined && settings.customHDRPath !== null) {
             this.customHDRPath = settings.customHDRPath;
-            console.log('Custom HDR path restored:', settings.customHDRPath);
-            // Note: Cannot reload HDR file automatically, user needs to re-select it
+            console.log('Custom HDR path stored:', settings.customHDRPath);
         }
         if (settings.toneMapping !== undefined) {
             this.setToneMapping(settings.toneMapping);
@@ -1818,6 +2209,17 @@ class GLTFViewer {
             case THREE.CineonToneMapping: return 'Cineon';
             case THREE.ReinhardToneMapping: return 'Reinhard';
             default: return 'ACES';
+        }
+    }
+
+    getShadowQualityName() {
+        const size = this.directionalLight.shadow.mapSize.width;
+        switch(size) {
+            case 1024: return 'low';
+            case 2048: return 'medium';
+            case 4096: return 'high';
+            case 8192: return 'ultra';
+            default: return 'high';
         }
     }
 

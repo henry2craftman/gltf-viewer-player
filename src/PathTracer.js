@@ -43,10 +43,23 @@ export class PathTracingRenderer {
             this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
             this.renderer.toneMappingExposure = 1.0;
 
+            // Temporarily clear environment to avoid rotation errors during init
+            const tempEnv = this.scene.environment;
+            const tempBg = this.scene.background;
+            this.scene.environment = null;
+            this.scene.background = null;
+
             // Create path tracer instance (matching example)
             // Don't pass scene/camera to constructor - will call setScene later
             this.pathTracer = new WebGLPathTracer(this.renderer);
             this.pathTracer.tiles.set(this.tilesX, this.tilesY);
+
+            // Set environment rotation to default Euler to prevent errors
+            this.pathTracer.environmentRotation = new THREE.Euler(0, 0, 0);
+
+            // Restore environment
+            this.scene.environment = tempEnv;
+            this.scene.background = tempBg;
 
             // Configure path tracer parameters
             this.updateSettings();
@@ -75,21 +88,29 @@ export class PathTracingRenderer {
      * Set the scene for path tracing
      */
     setScene(scene, camera) {
+        // Update scene and camera references first
+        this.scene = scene;
+        this.camera = camera;
+
         if (!this.pathTracer) {
             this.init();
         }
 
         if (this.pathTracer) {
-            this.scene = scene;
-            this.camera = camera;
 
             // Temporarily clear environment and background to avoid rotation errors
+            // The path tracer's updateEnvironment expects textures with rotation property
             const tempEnv = scene.environment;
             const tempBg = scene.background;
             scene.environment = null;
             scene.background = null;
 
             try {
+                // Ensure environment rotation is set on the path tracer
+                if (!this.pathTracer.environmentRotation) {
+                    this.pathTracer.environmentRotation = new THREE.Euler(0, 0, 0);
+                }
+
                 this.pathTracer.setScene(scene, camera);
                 console.log('Path tracer scene set successfully');
             } catch (error) {

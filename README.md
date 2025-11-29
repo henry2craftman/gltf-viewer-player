@@ -15,10 +15,17 @@ A professional 3D model viewer and player built with Three.js, featuring advance
 
 #### 🎨 Advanced Rendering
 - **PBR Materials**: Physically-based rendering with metalness and roughness
-- **HDR Environment Maps**: Support for .hdr and .exr files
+- **HDR Environment Maps**: Support for .hdr and .exr files with IndexedDB persistence
 - **Tone Mapping**: Multiple options (ACES Filmic, Cineon, Reinhard, Linear)
-- **Real-time Shadows**: PCF soft shadows with configurable quality
+- **Real-time Shadows**: PCF soft shadows with configurable quality, softness, and bias
 - **Environment Lighting**: Image-based lighting (IBL) for realistic reflections
+
+#### 🎯 Path Tracing (NEW)
+- **GPU-Accelerated Ray Tracing**: Photorealistic rendering using three-gpu-pathtracer
+- **Progressive Rendering**: Watch image quality improve over time
+- **Configurable Bounces**: Control light bounce count for accuracy vs performance
+- **Transmissive Materials**: Support for glass and transparent materials
+- **Real-time Progress**: Visual feedback on rendering progress
 
 #### 🎮 Camera Modes
 - **First Person**: Immersive FPS-style navigation
@@ -28,7 +35,8 @@ A professional 3D model viewer and player built with Three.js, featuring advance
 
 #### 🌅 Dynamic Lighting
 - **Time of Day System**: Automatic day/night cycle
-- **Multiple Environments**: Studio, Natural, Venice Sunset, Custom HDR
+- **Sun Orbit Control**: Adjustable sun orbit axis (Pitch/Yaw/Roll)
+- **Multiple Environments**: Studio, Natural, Venice Sunset, Citrus Orchard, Sunny Rose Garden, Custom HDR
 - **Adjustable Lighting**: Control ambient, directional, and environment intensity
 - **Real-time Sky**: Procedural sky with sun position
 
@@ -105,6 +113,7 @@ gltf-viewer-player/
 │   ├── PostProcessing.js    # Post-processing effects
 │   ├── TimeOfDay.js         # Day/night cycle
 │   ├── ParticleSystem.js    # Particle effects
+│   ├── PathTracer.js        # GPU path tracing renderer
 │   ├── GlitchEffect.js      # Glitch shader
 │   └── GlitchEffectPass.js  # Glitch pass
 ├── index.html               # Main HTML file
@@ -116,17 +125,20 @@ gltf-viewer-player/
 
 #### Technologies
 - **Three.js**: 3D rendering engine
+- **three-gpu-pathtracer**: GPU-accelerated path tracing
 - **Vite**: Fast build tool and dev server
 - **GSAP**: Animation library
 - **WebGL**: Hardware-accelerated graphics
+- **IndexedDB**: Persistent storage for HDR files
 
 #### Rendering Pipeline
 1. **Model Loading**: GLTFLoader with automatic scaling and centering
 2. **Environment Setup**: PMREM generator for IBL
 3. **Material Enhancement**: PBR materials with environment maps
-4. **Shadow Mapping**: Directional light with cascaded shadows
+4. **Shadow Mapping**: Directional light with configurable shadows
 5. **Post-Processing**: Bloom, SSAO, and custom effects
 6. **Tone Mapping**: HDR to LDR conversion
+7. **Path Tracing** (Optional): GPU-accelerated ray tracing for photorealistic results
 
 #### Performance Features
 - Logarithmic depth buffer for precision
@@ -141,6 +153,8 @@ gltf-viewer-player/
 - **Studio**: Neutral indoor lighting (default)
 - **Natural**: Outdoor daytime with blue sky
 - **Venice**: Dramatic sunset atmosphere
+- **Citrus Orchard**: HDR orchard environment
+- **Sunny Rose Garden**: HDR garden environment
 - **None**: Black background, no IBL
 
 #### Custom HDR
@@ -166,11 +180,22 @@ Upload your own .hdr or .exr files for custom environments:
 - Time slider (0-24 hours)
 - Time speed multiplier
 - Sun intensity
+- Sun orbit axis rotation (Pitch/Yaw/Roll)
 
 #### Graphics
-- Shadow quality
+- Shadow quality (Low/Medium/High/Ultra)
+- Shadow softness and bias control
+- Light/Shadow camera helpers
 - Fog enable/disable
 - Pixel ratio (performance vs quality)
+
+#### Path Tracing
+- Enable/disable GPU path tracing
+- Glossy filter for faster convergence
+- Resolution scale (performance control)
+- Light bounce count
+- Transmissive bounce count (glass/transparent)
+- Real-time progress indicator
 
 #### Environment & Lighting
 - Environment selection
@@ -223,10 +248,17 @@ Three.js로 제작된 전문가급 3D 모델 뷰어 및 플레이어. 고급 렌
 
 #### 🎨 고급 렌더링
 - **PBR 재질**: 금속성과 거칠기를 사용한 물리 기반 렌더링
-- **HDR 환경 맵**: .hdr 및 .exr 파일 지원
+- **HDR 환경 맵**: .hdr 및 .exr 파일 지원 (IndexedDB로 영속 저장)
 - **톤 매핑**: 다양한 옵션 (ACES Filmic, Cineon, Reinhard, Linear)
-- **실시간 그림자**: 설정 가능한 품질의 PCF 소프트 섀도우
+- **실시간 그림자**: 품질, 부드러움, 바이어스 설정 가능한 PCF 소프트 섀도우
 - **환경 조명**: 사실적인 반사를 위한 이미지 기반 조명 (IBL)
+
+#### 🎯 Path Tracing (신규)
+- **GPU 가속 광선 추적**: three-gpu-pathtracer를 사용한 사실적인 렌더링
+- **점진적 렌더링**: 시간이 지남에 따라 이미지 품질 향상
+- **반사 횟수 설정**: 정확도 vs 성능 조절
+- **투과성 재질**: 유리 및 투명 재질 지원
+- **실시간 진행률**: 렌더링 진행 상황 시각적 피드백
 
 #### 🎮 카메라 모드
 - **1인칭**: 몰입감 있는 FPS 스타일 네비게이션
@@ -236,7 +268,8 @@ Three.js로 제작된 전문가급 3D 모델 뷰어 및 플레이어. 고급 렌
 
 #### 🌅 동적 조명
 - **시간대 시스템**: 자동 낮/밤 사이클
-- **다양한 환경**: 스튜디오, 자연, 베니스 석양, 커스텀 HDR
+- **태양 궤도 조절**: 태양 궤도축 회전 (Pitch/Yaw/Roll)
+- **다양한 환경**: 스튜디오, 자연, 베니스 석양, 과수원, 장미정원, 커스텀 HDR
 - **조명 조절**: 앰비언트, 디렉셔널, 환경 강도 제어
 - **실시간 하늘**: 태양 위치에 따른 절차적 하늘
 
@@ -313,6 +346,7 @@ gltf-viewer-player/
 │   ├── PostProcessing.js    # 후처리 효과
 │   ├── TimeOfDay.js         # 낮/밤 사이클
 │   ├── ParticleSystem.js    # 파티클 효과
+│   ├── PathTracer.js        # GPU 경로 추적 렌더러
 │   ├── GlitchEffect.js      # 글리치 셰이더
 │   └── GlitchEffectPass.js  # 글리치 패스
 ├── index.html               # 메인 HTML 파일
@@ -324,17 +358,20 @@ gltf-viewer-player/
 
 #### 기술 스택
 - **Three.js**: 3D 렌더링 엔진
+- **three-gpu-pathtracer**: GPU 가속 경로 추적
 - **Vite**: 빠른 빌드 도구 및 개발 서버
 - **GSAP**: 애니메이션 라이브러리
 - **WebGL**: 하드웨어 가속 그래픽
+- **IndexedDB**: HDR 파일 영속 저장
 
 #### 렌더링 파이프라인
 1. **모델 로딩**: 자동 스케일링 및 센터링을 사용한 GLTFLoader
 2. **환경 설정**: IBL을 위한 PMREM 생성기
 3. **재질 향상**: 환경 맵이 적용된 PBR 재질
-4. **섀도우 매핑**: 캐스케이드 섀도우가 있는 디렉셔널 라이트
+4. **섀도우 매핑**: 설정 가능한 디렉셔널 라이트 그림자
 5. **후처리**: 블룸, SSAO 및 커스텀 효과
 6. **톤 매핑**: HDR에서 LDR로 변환
+7. **경로 추적** (선택): 사실적인 결과를 위한 GPU 가속 광선 추적
 
 #### 성능 기능
 - 정밀도를 위한 로그 깊이 버퍼
@@ -349,6 +386,8 @@ gltf-viewer-player/
 - **Studio**: 중립적인 실내 조명 (기본값)
 - **Natural**: 푸른 하늘의 야외 낮
 - **Venice**: 극적인 석양 분위기
+- **Citrus Orchard**: HDR 과수원 환경
+- **Sunny Rose Garden**: HDR 장미정원 환경
 - **None**: 검은 배경, IBL 없음
 
 #### 커스텀 HDR
@@ -374,11 +413,22 @@ gltf-viewer-player/
 - 시간 슬라이더 (0-24시)
 - 시간 속도 배율
 - 태양 강도
+- 태양 궤도축 회전 (Pitch/Yaw/Roll)
 
 #### 그래픽
-- 그림자 품질
+- 그림자 품질 (Low/Medium/High/Ultra)
+- 그림자 부드러움 및 바이어스 조절
+- 조명/그림자 카메라 헬퍼
 - 안개 활성화/비활성화
 - 픽셀 비율 (성능 vs 품질)
+
+#### Path Tracing
+- GPU 경로 추적 활성화/비활성화
+- Glossy 필터 (빠른 수렴)
+- 해상도 스케일 (성능 조절)
+- 빛 반사 횟수
+- 투명 반사 횟수 (유리/투명체)
+- 실시간 진행률 표시
 
 #### 환경 & 조명
 - 환경 선택
